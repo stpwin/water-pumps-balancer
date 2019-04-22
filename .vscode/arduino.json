@@ -1,0 +1,4 @@
+{
+    "sketch": "punpunpump.ino",
+    "board": "arduino:avr:unowifi"
+}
