@@ -1,17 +1,19 @@
 
 #define PUMP_COUNT 2
-#define FLOAT_SWITCH_PIN 3
-#define MODE_SWITCH_PIN 4
-#define MANUAL_START_STOP_PIN 5
+#define FLOAT_SWITCH_PIN 4
+#define MODE_SWITCH_PIN 2
+#define MANUAL_START_STOP_PIN 3
 
 #define MODE_LED_AUTO_PIN 6
 #define MODE_LED_MANUAL_PIN 7
 
+#define READY_LED_PIN 13
+
 uint8_t pumps_pin[PUMP_COUNT] = {A0, A1};
 uint8_t pumps_sleep_led_pin[PUMP_COUNT] = {11, 12};
 
-unsigned long runtime_limit = 3600; //millis
-unsigned long sleep_time = 1800;    //millis
+unsigned long runtime_limit = 3000; //millis
+unsigned long sleep_time = 10000;   //millis
 
 unsigned long pumps_start_time[PUMP_COUNT];
 unsigned long pumps_stop_time[PUMP_COUNT];
@@ -19,6 +21,10 @@ bool pumps_running[PUMP_COUNT];
 bool pumps_ready[PUMP_COUNT] = {true, true};
 
 bool IsPumpRunning = false;
+volatile byte ModeButtonState = HIGH;
+volatile byte StartStopButtonState = HIGH;
+byte lastModeButtonState = HIGH;
+byte lastStartStopButtonState = HIGH;
 
 enum Mode_t : uint8_t
 {
@@ -33,47 +39,56 @@ void setup()
   Serial.begin(9600);
   pinMode(MODE_SWITCH_PIN, INPUT_PULLUP);
   pinMode(MANUAL_START_STOP_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(MODE_SWITCH_PIN), OnModeButtonPress, FALLING);
+  attachInterrupt(digitalPinToInterrupt(MANUAL_START_STOP_PIN), OnStartStopPress, FALLING);
+  pinMode(READY_LED_PIN, OUTPUT);
   pinMode(MODE_LED_AUTO_PIN, OUTPUT);
   pinMode(MODE_LED_MANUAL_PIN, OUTPUT);
   pinMode(FLOAT_SWITCH_PIN, INPUT_PULLUP);
   for (uint8_t i = 0; i < PUMP_COUNT; i++)
   {
-    pinMode(i, OUTPUT);
+    pinMode(pumps_pin[i], OUTPUT);
+    pinMode(pumps_sleep_led_pin[i], OUTPUT);
   }
+  ModeChangeCheck();
+  digitalWrite(READY_LED_PIN, HIGH);
+  Serial.println("Ready");
 }
 
 void loop()
 {
-  if (NeedToFillWater())
+  if (mode == Auto)
   {
-    if (!AnyPumpRunning())
+    if (NeedToFillWater())
     {
-      int readyPump = GetReadyPump();
-      if (readyPump == -1)
+      if (!AnyPumpRunning())
       {
-        //Serial.println("No ready pump.");
+        int readyPump = GetReadyPump();
+        if (readyPump == -1)
+        {
+          //Serial.println("No ready pump.");
+        }
+        else
+        {
+          StartPump(readyPump);
+        }
       }
       else
       {
-        StartPump(readyPump);
+        PumpRunningCheck();
       }
     }
     else
     {
-      PumpRunningCheck();
+      StopRunningPump();
     }
   }
   else
   {
-    for (uint8_t i = 0; i < PUMP_COUNT; i++)
-    {
-      if (pumps_running[i])
-      {
-        StopPump(i);
-      }
-    }
+    //Manual
   }
   PumpReadyCheck();
+  ButtonCheck();
 }
 
 void PumpReadyCheck()
@@ -88,6 +103,7 @@ void PumpReadyCheck()
         Serial.print("Pump ");
         Serial.print(i);
         Serial.println(" ready!");
+        digitalWrite(pumps_sleep_led_pin[i], LOW);
         pumps_ready[i] = true;
       }
     }
@@ -131,7 +147,8 @@ void PumpRunningCheck()
       {
         Serial.print("Pump ");
         Serial.print(i);
-        Serial.println(" need to sleep");
+        Serial.println(" working hard, need to sleep");
+        digitalWrite(pumps_sleep_led_pin[i], HIGH);
         StopPump(i);
         pumps_ready[i] = false;
       }
@@ -154,4 +171,80 @@ int GetReadyPump()
 bool AnyPumpRunning()
 {
   return IsPumpRunning;
+}
+
+void StopRunningPump()
+{
+  for (uint8_t i = 0; i < PUMP_COUNT; i++)
+  {
+    if (pumps_running[i])
+    {
+      StopPump(i);
+    }
+  }
+}
+
+void OnModeButtonPress()
+{
+  ModeButtonState = !ModeButtonState;
+}
+
+void OnStartStopPress()
+{
+  StartStopButtonState = !StartStopButtonState;
+}
+
+void ModeChangeCheck()
+{
+  if (mode == Auto)
+  {
+    digitalWrite(MODE_LED_AUTO_PIN, HIGH);
+    digitalWrite(MODE_LED_MANUAL_PIN, LOW);
+  }
+  else
+  {
+    digitalWrite(MODE_LED_AUTO_PIN, LOW);
+    digitalWrite(MODE_LED_MANUAL_PIN, HIGH);
+    StopRunningPump();
+  }
+}
+
+void ToggleMode()
+{
+  Serial.print("Mode changed to ");
+  if (mode == Auto)
+  {
+    mode = Manual;
+    Serial.println("Manual");
+  }
+  else
+  {
+    mode = Auto;
+    Serial.println("Auto");
+  }
+  ModeChangeCheck();
+}
+
+void TogglePump()
+{
+  if (mode == Manual)
+  {
+    digitalWrite(pumps_pin[0], !digitalRead(pumps_pin[0]));
+  }
+}
+
+void ButtonCheck()
+{
+  if (lastModeButtonState != ModeButtonState)
+  {
+    lastModeButtonState = ModeButtonState;
+    ToggleMode();
+  }
+  else if (lastStartStopButtonState != StartStopButtonState)
+  {
+    lastStartStopButtonState = StartStopButtonState;
+    TogglePump();
+    Serial.print("Start/Stop changed!");
+    Serial.println(StartStopButtonState);
+  }
 }
