@@ -8,6 +8,7 @@
 #define MODE_LED_MANUAL_PIN 7
 
 #define READY_LED_PIN 13
+#define TANK_FULL_LED_PIN 10
 
 uint8_t pumps_pin[PUMP_COUNT] = {A0, A1};
 uint8_t pumps_sleep_led_pin[PUMP_COUNT] = {11, 12};
@@ -34,22 +35,28 @@ enum Mode_t : uint8_t
 
 Mode_t mode;
 
-void setup()
+void Init()
 {
-  Serial.begin(9600);
   pinMode(MODE_SWITCH_PIN, INPUT_PULLUP);
   pinMode(MANUAL_START_STOP_PIN, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(MODE_SWITCH_PIN), OnModeButtonPress, FALLING);
-  attachInterrupt(digitalPinToInterrupt(MANUAL_START_STOP_PIN), OnStartStopPress, FALLING);
   pinMode(READY_LED_PIN, OUTPUT);
   pinMode(MODE_LED_AUTO_PIN, OUTPUT);
   pinMode(MODE_LED_MANUAL_PIN, OUTPUT);
   pinMode(FLOAT_SWITCH_PIN, INPUT_PULLUP);
+  pinMode(TANK_FULL_LED_PIN, OUTPUT);
   for (uint8_t i = 0; i < PUMP_COUNT; i++)
   {
     pinMode(pumps_pin[i], OUTPUT);
     pinMode(pumps_sleep_led_pin[i], OUTPUT);
   }
+  attachInterrupt(digitalPinToInterrupt(MODE_SWITCH_PIN), OnModeButtonPress, FALLING);
+  attachInterrupt(digitalPinToInterrupt(MANUAL_START_STOP_PIN), OnStartStopPress, FALLING);
+}
+
+void setup()
+{
+  Init();
+  Serial.begin(9600);
   ModeChangeCheck();
   digitalWrite(READY_LED_PIN, HIGH);
   Serial.println("Ready");
@@ -61,6 +68,7 @@ void loop()
   {
     if (NeedToFillWater())
     {
+      digitalWrite(TANK_FULL_LED_PIN, LOW);
       if (!AnyPumpRunning())
       {
         int readyPump = GetReadyPump();
@@ -80,6 +88,7 @@ void loop()
     }
     else
     {
+      digitalWrite(TANK_FULL_LED_PIN, HIGH);
       StopRunningPump();
     }
   }
